@@ -78,7 +78,7 @@ Rules:
   
 The translator recognizes paired block delimiters in any of these equivalent forms: <ANCHOR> START … END, <ANCHOR> … END, <ANCHOR> … <ANCHOR>END, and CONTROL <Type> … CONTROLEND. The opening START is optional and does not change block semantics. Closers (END, <ANCHOR>END, CONTROLEND) are matched to the nearest unclosed opener by nesting; typed closers take precedence when present, and a bare END resolves to the innermost open block. If nesting is malformed such that a closer cannot be unambiguously matched and the resolution materially affects structure, trigger Step 3.3.
 
-## Visibility of Declared Dependencies
+### Visibility of Declared Dependencies
 
 `USES` carries a visibility that controls whether Step 3.2 attempts public-registry
 verification. Visibility is declared by a leading modifier:
@@ -90,6 +90,13 @@ verification. Visibility is declared by a leading modifier:
                                    The engineer asserts the dependency is internal,
                                    vendored, proprietary, on a private feed, or otherwise
                                    not present on a public registry.
+
+#### Behavior matrix
+                                   
+| Form | Public registry lookup |	On failure to verify |
+| USES Foo.Bar | Required | Step 3.3 fires; engineer decides |
+| USES PUBLIC Foo.Bar | Required | Step 3.3 fires; engineer decides |
+| USES PRIVATE Foo.Bar | Not attempted | Logged as engineer-owned trust declaration; no pause |
                                    
 ## Types and Members
 
