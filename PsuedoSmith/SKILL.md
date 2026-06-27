@@ -193,7 +193,125 @@ Run this step only when `DETECT_DEAD_CODE = TRUE`.
 
 Follow `references/optional-features/dead-code.md`.
 
-### Step 3.2 -- Human Checkpoint for Material Ambiguity
+### Step 3.2 -- Dependency Resolution & Verification
+
+This step runs so that any unverified PUBLIC dependency
+becomes a checkpoint trigger. Its purpose is to
+replace "the dependency is declared" with "the dependency is declared and resolvable,"
+and to hand control back to the engineer before tokens are spent generating code that
+references packages that do not exist or do not work on the declared target.
+
+#### 3.2.1 Gather the dependency set
+
+Collect every dependency reference from:
+- every `USES` / `USES PUBLIC` / `USES PRIVATE` statement in the blueprint body;
+- `DATABASE_DRIVER`, `TEST_FRAMEWORK`, and `TARGET_UI_FRAMEWORK` from the header;
+- any platform-required dependency inferred from the platform reference file
+  (record the inference in the Log).
+
+For each, record its declared visibility.
+
+#### 3.2.2 Build a Resolution Token per dependency
+
+A Resolution Token is:
+
+  token_id      : <unique internally>
+  declared_id   : <as written in USES>
+  visibility    : PUBLIC | PRIVATE
+  registry      : <nuget | pypi | npm | crates-io | maven-central | go | other:<name> | none>
+  resolved_id   : <registry-canonical id; same as declared_id if verified; null if unverified>
+  version_floor : <lowest version satisfying all constraints; computed across the closure>
+  latest_stable : <newest non-prerelease version present in the index; null if unknown>
+  tfm_compat    : <verified compatible with TARGET_LANGUAGE_VERSION / TARGET_PLATFORM; null if unknown>
+  api_surface   : <exact type names, method signatures, namespaces the generated code will call,
+                   confirmed to exist in the resolved version; null if not confirmed>
+  status        : verified | unverified-public | private-trusted | offline
+
+#### 3.2.3 Resolution rules by visibility
+
+For a PUBLIC token:
+  1. If the runtime can reach the declared registry, query the registry's flat index /
+     search API. Resolve resolved_id, latest_stable, version_floor, and tfm_compat.
+  2. **Rebrand detection**: if the declared_id has no matching index, search the registry by
+     keyword before concluding the package is missing. Common renames (e.g.
+     UglyToad.PdfPig -> PdfPig) are expected. Record any rename found.
+  3. **Confirm the API surface**: the resolved version must be known to expose every type,
+     method, and namespace the generated code intends to call. If the remembered API
+     cannot be confirmed against the resolved version, status = unverified-public.
+  4. **Resolve the closure**: every PUBLIC token's version_floor must satisfy every other
+     PUBLIC token's transitive lower bound. Transitive-floor conflicts (e.g. token A
+     requires B >= 3.1.1 but token B is pinned at 3.1.0) set status = unverified-public.
+  5. **Prefer newest stable**. If only a prerelease exists, status = unverified-public and
+     the checkpoint asks whether prerelease use is acceptable.
+  6. **Purpose-fit cross-check** (runs only when both `declared_purpose` and
+   `registry_description` are non-null):
+      a. If both contain a directed phrase of the form `A → B` / `A to B` / `A into B` and
+      the directions disagree → `purpose_check = mismatch:direction-inversion`.
+      (Example: `DocSharp.Markdown "DOCX -> Markdown"` vs. registry "Markdown to Word
+      document" → direction-inversion.)
+
+       b. If the declared purpose names a category the registry description puts in a
+      different category (render vs. extract, parse vs. serialize, render-to-screen vs.
+      write-to-file) → `purpose_check = mismatch:category-drift`.
+
+       c. If the declared purpose names a target format the package does not list among its
+      supported inputs/outputs → `purpose_check = mismatch:target-format-mismatch`.
+
+       d. If the package description indicates the scope is narrower than the declared
+      purpose (e.g. declared "image processing", description "EXIF metadata reader") →
+      `purpose_check = mismatch:scope-narrower`.
+
+       e. If the registry description is vague, marketing-toned, or unparseable for
+      direction or category → `purpose_check = uncertain`; proceed silently, do not
+      flag. **False-positive control:** only clear contradictions fire.
+
+     f. If `declared_purpose` is null → `purpose_check = skipped-no-purpose`; proceed with
+      the existing three checks only.
+
+     Any `mismatch:*` result sets `status = unverified-public` for that token and fires
+     Step 3.3.
+
+   7. If registry verification succeeds on id, version range, TFM compat, API surface, and
+   purpose fit → `status = verified`. Otherwise `status = unverified-public`.
+
+For a PRIVATE token:
+  1. Do NOT query any public registry.
+  2. status = private-trusted.
+  3. Log an engineer-owned trust declaration: "dependency declared PRIVATE; not verified
+     against any public registry; engineer owns existence, version, and API."
+  4. PRIVATE tokens are NOT exempt from Step 4.1 (platform compatibility audit on the
+     declared API) or Step 4.5 (build/restore gate against whatever feed the engineer's
+     environment supplies).
+
+For either, when the runtime cannot reach any public registry:
+  1. PUBLIC tokens cannot be verified -> status = offline (treated as unverified-public
+     for checkpoint purposes; the integrity advisory in the report is mandatory).
+  2. PRIVATE tokens remain private-trusted.
+  3. The skill does NOT substitute hallucinated versions, ids, or APIs in place of the
+     unreachable registry. Pause and let the engineer decide.
+     
+#### 3.2.4 Outcomes
+
+If every PUBLIC token verifies AND every PRIVATE token is properly marked PRIVATE ->
+  proceed to Step 3.3 silently (no checkpoint trigger from this step).
+- If ANY PUBLIC token is unverified-public or offline -> set Step 3.3's
+  `awaiting_user_input: true`, populate `pending_decisions` with each unverified token,
+  and proceed to Step 3.3.
+- PRIVATE tokens never trigger the checkpoint on their own. Their trust declaration is
+  recorded, not raised.
+
+#### 3.2.5 Nothing is auto-substituted
+
+When verification finds that the engineer's declared version doesn't exist, or finds a
+rebrand, or finds a different latest-stable, the skill does NOT silently rewrite the
+token. It records findings and surfaces them at Step 3.3 for the engineer to choose.
+
+This is deliberate. The engineer might know the version pin matters for downstream
+compatibility; might know the renamed package needs an internal mirror; might know the
+unverified API was real in an older release. The skill's job at 3.2 is to gather facts,
+not to choose for the engineer.
+
+### Step 3.3 -- Human Checkpoint for Material Ambiguity
 
 Skip this step silently when no material ambiguity exists.
 
@@ -230,7 +348,7 @@ When triggered, present a concise table of issues and ask the engineer to choose
 
 After the engineer responds, proceed once. Do not checkpoint repeatedly for the same issue.
 
-### Step 3.3 -- Output Delivery Choice
+### Step 3.4 -- Output Delivery Choice
 
 load the platform and optional-feature references required by the confirmed header values.
 
@@ -245,7 +363,7 @@ The Implementation Report is always a distinct artefact. In downloadable mode it
 separate `.md` file. In inline mode it is a separate Markdown report section and must not be
 mixed into source-code blocks.
 
-## Step 3.4 -- Initialize Session Manifest, Log, and Plan (fresh runs only)
+## Step 3.5 -- Initialize Session Manifest, Log, and Plan (fresh runs only)
 
 This step runs only when Step 0 found no state file. It creates `logs/translation-state.md`
 (creating the `logs/` directory if needed) and writes the full session manifest. All
@@ -255,7 +373,7 @@ each turn, and not part of the deliverable. If no persistent filesystem is avail
 On creation, mark Steps 1 through 3.3 as `completed` so the first `[STATE]` entry is
 internally consistent.
 
-#### 3.4.1 Session Manifest (header + resolved decisions)
+#### 3.5.1 Session Manifest (header + resolved decisions)
 
 The manifest is what makes a Step 0 resume safe. Write it first.
 
@@ -283,7 +401,7 @@ The manifest is what makes a Step 0 resume safe. Write it first.
 Store **selections only**. Do not inline platform-reference file contents; those are
 re-loaded per Step 0.3.
 
-#### 3.4.2 Translation Log
+#### 3.5.2 Translation Log
 
 Captures status, decisions, substitutions, risks, TODOs, and confidence for each translated
 item. The Log is report-bound; it does **not** duplicate item status (the Plan owns status).
@@ -302,7 +420,7 @@ item. The Log is report-bound; it does **not** duplicate item status (the Plan o
 Append immediately after each item is translated or audited. Use `[LOG UPDATE]` for later
 changes.
 
-#### 3.4.3 Translation Plan (single source of truth for status)
+#### 3.5.3 Translation Plan (single source of truth for status)
 
 Create a todo list of every blueprint item to translate. Derive items from structural
 anchors (`FUNCTION`, `CLASS`, `MODULE`, `DATABASE.QUERY`, etc.) and from natural-language
@@ -323,7 +441,7 @@ Mark an item `in_progress` when translation begins and `completed` when it finis
 authoritative status list. After the first full write, emit deltas with `[PLAN UPDATE]`
 rather than reprinting the whole plan.
 
-#### 3.4.4 Workflow State
+#### 3.5.4 Workflow State
 
 Append a `[STATE]` entry after each workflow step completes or pauses for input.
 `translation_plan_summary` is **derived from the Plan**, never maintained independently.
@@ -366,25 +484,6 @@ Note: `next_step` is the step to enter **once `needed_from_user` is satisfied** 
   next_item: <first pending id>
 ```
 
-#### Example: Step 3.3 raised a database ambiguity (paused for input)
-
-```text
-[STATE] workflow
-  completed_steps: [1, 2, 3]
-  current_step: 3.3
-  awaiting_user_input: true
-  translation_plan_summary:
-    total: 0
-    completed: 0
-    in_progress: none
-    pending: []
-  pending_decisions:
-    - db_provider: DATABASE_PROVIDER missing but DATABASE.QUERY anchors present
-  needed_from_user: Choose DATABASE_PROVIDER (sqlite, postgresql, mysql, file-based) or abort
-  next_step: 3.4
-  next_item: none
-```
-
 #### Example: mid-Step 4, one item done, one in progress
 
 ```text
@@ -403,7 +502,7 @@ Note: `next_step` is the step to enter **once `needed_from_user` is satisfied** 
   next_item: class_user_repository
 ```
 
-### 3.4.5 Persist
+#### 3.5.5 Persist
 
 Write the Manifest, Log, Plan, and initial State to `translation-state.md`. Do not re-print
 the file inline. On every subsequent step or item, update the file in place with
