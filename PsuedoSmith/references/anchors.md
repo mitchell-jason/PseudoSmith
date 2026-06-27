@@ -93,10 +93,11 @@ verification. Visibility is declared by a leading modifier:
 
 #### Behavior matrix
                                    
-| Form | Public registry lookup |	On failure to verify |
-| USES Foo.Bar | Required | Step 3.3 fires; engineer decides |
-| USES PUBLIC Foo.Bar | Required | Step 3.3 fires; engineer decides |
-| USES PRIVATE Foo.Bar | Not attempted | Logged as engineer-owned trust declaration; no pause |
+| Form | Public registry lookup | On failure to verify |
+| --- | --- | --- |
+| `USES Foo.Bar` | Required | Step 3.3 fires; engineer decides |
+| `USES PUBLIC Foo.Bar` | Required | Step 3.3 fires; engineer decides |
+| `USES PRIVATE Foo.Bar` | Not attempted | Logged as engineer-owned trust declaration; no pause |
                                    
 ## Types and Members
 
