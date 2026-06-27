@@ -215,17 +215,28 @@ For each, record its declared visibility.
 
 A Resolution Token is:
 
-  token_id      : <unique internally>
-  declared_id   : <as written in USES>
-  visibility    : PUBLIC | PRIVATE
-  registry      : <nuget | pypi | npm | crates-io | maven-central | go | other:<name> | none>
-  resolved_id   : <registry-canonical id; same as declared_id if verified; null if unverified>
-  version_floor : <lowest version satisfying all constraints; computed across the closure>
-  latest_stable : <newest non-prerelease version present in the index; null if unknown>
-  tfm_compat    : <verified compatible with TARGET_LANGUAGE_VERSION / TARGET_PLATFORM; null if unknown>
-  api_surface   : <exact type names, method signatures, namespaces the generated code will call,
-                   confirmed to exist in the resolved version; null if not confirmed>
-  status        : verified | unverified-public | private-trusted | offline
+  ```
+token_id              : <unique internally>
+declared_id           : <as written in USES>
+visibility            : PUBLIC | PRIVATE
+declared_purpose       : <string from the purpose clause; null if absent>
+registry              : <nuget | pypi | npm | crates-io | maven-central | go | other:<name> | none>
+resolved_id           : <registry-canonical id; same as declared_id if verified; null if unverified>
+version_floor         : <lowest version satisfying all constraints; computed across the closure>
+latest_stable         : <newest non-prerelease version present in the index; null if unknown>
+tfm_compat            : <verified compatible with TARGET_LANGUAGE_VERSION / TARGET_PLATFORM; null if unknown>
+api_surface           : <exact type names, method signatures, namespaces the generated code will call,
+                        confirmed to exist in the resolved version; null if not confirmed>
+registry_description  : <description string from the registry manifest; null if absent or unreachable>
+purpose_check         : matched | mismatch:direction-inversion
+                        | mismatch:category-drift
+                        | mismatch:target-format-mismatch
+                        | mismatch:scope-narrower
+                        | uncertain
+                        | skipped-no-purpose
+                        | skipped-private
+status                : verified | unverified-public | private-trusted | offline
+```
 
 #### 3.2.3 Resolution rules by visibility
 
