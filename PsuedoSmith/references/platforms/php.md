@@ -25,9 +25,11 @@ the runtime context is unclear, trigger Step 3.3.
 
 ## GUI / Web Output
 
-PHP has no native GUI. GUI anchors require `TARGET_UI_FRAMEWORK`.
+PHP has no native GUI; When GUI anchors appear and no
+`TARGET_UI_FRAMEWORK` is declared, default to HTML/CSS and report the assumption (a PHP-specific
+default; the general anchor rule still requires an explicit framework).
 
-If `TARGET_UI_FRAMEWORK = HTML`, map controls to HTML/CSS:
+Map controls to HTML/CSS:
 
 - `WINDOW`, `DIALOG`, `PANEL` -> `<div>` containers;
 - `BUTTON` -> `<button>`;
@@ -36,14 +38,16 @@ If `TARGET_UI_FRAMEWORK = HTML`, map controls to HTML/CSS:
 - `DROPDOWN`/`COMBOBOX` -> `<select>`;
 - `TABLE`/`DATAGRID` -> `<table>`.
 
-Do not choose HTML output silently if the blueprint did not select a UI framework.
+If the blueprint implies a client-side SPA or JSON API rather than server-rendered markup, that is
+material — surface it at Step 3.3 instead of assuming server HTML.
 
 ## Database
 
-PHP commonly supports PDO, but drivers are provider-specific and environment-dependent.
+PHP idiom is PDO with prepared statements. Drivers are provider-specific and environment-dependent.
 
-Require `DATABASE_PROVIDER`. Use PDO only when appropriate and available/declared.
-
+When `DATABASE_PROVIDER` is not declared, default to MySQL (`pdo_mysql`) and confirm the choice at
+Step 3.3 (default + confirm, not a hard block). PDO is the access layer regardless of provider; the
+provider selects the DSN and SQL dialect.
 Common provider mappings:
 
 - SQLite: `pdo_sqlite`;
