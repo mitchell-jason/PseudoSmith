@@ -38,9 +38,6 @@ Map controls to HTML/CSS:
 - `DROPDOWN`/`COMBOBOX` -> `<select>`;
 - `TABLE`/`DATAGRID` -> `<table>`.
 
-If the blueprint implies a client-side SPA or JSON API rather than server-rendered markup, that is
-material — surface it at Step 3.3 instead of assuming server HTML.
-
 ## Database
 
 PHP idiom is PDO with prepared statements. Drivers are provider-specific and environment-dependent.
